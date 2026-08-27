@@ -31,6 +31,8 @@ namespace AutoRefillFires
         private ConfigEntry<bool> _fillWallTorches;
         private ConfigEntry<bool> _fillBraziers;
         private ConfigEntry<bool> _fillOtherFireplaces;
+        private ConfigEntry<KeyboardShortcut> _toggleHotkey;
+        private bool _modEnabled = true;
 
         private float _nextCheckTime;
 
@@ -127,22 +129,53 @@ namespace AutoRefillFires
                 "Automatically refill unknown or modded Fireplace-based objects."
             );
 
+            _toggleHotkey = Config.Bind(
+                "General",
+                "ToggleHotkey",
+                new KeyboardShortcut(KeyCode.F7),
+                "Hotkey used to enable or disable automatic refilling."
+            );
+
             Logger.LogInfo("Auto Refill Fires loaded!");
         }
 
         private void Update()
         {
+            if (_toggleHotkey.Value.IsDown())
+            {
+                _modEnabled = !_modEnabled;
+
+                string status = _modEnabled
+                    ? "Auto Refill Fires: ENABLED"
+                    : "Auto Refill Fires: DISABLED";
+
+                Player player = Player.m_localPlayer;
+
+                if (player != null)
+                {
+                    player.Message(
+                        MessageHud.MessageType.Center,
+                        status
+                    );
+                }
+
+                Logger.LogInfo(status);
+            }
+
+            if (!_modEnabled)
+                return;
+
             if (Time.time < _nextCheckTime)
                 return;
 
             _nextCheckTime = Time.time + _checkInterval.Value;
 
-            Player player = Player.m_localPlayer;
+            Player localPlayer = Player.m_localPlayer;
 
-            if (player == null)
+            if (localPlayer == null)
                 return;
 
-            RefillNearbyFireplaces(player);
+            RefillNearbyFireplaces(localPlayer);
         }
 
         private bool ShouldRefillFireplace(Fireplace fireplace)
