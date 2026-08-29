@@ -1,6 +1,7 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace AutoRefillFires
 {
@@ -43,6 +44,7 @@ namespace AutoRefillFires
         private ConfigEntry<bool> _fillStandingTorches;
         private ConfigEntry<bool> _fillWallTorches;
         private ConfigEntry<bool> _fillBraziers;
+        private ConfigEntry<bool> _fillBonfires;
         private ConfigEntry<bool> _fillOtherFireplaces;
         private ConfigEntry<int> _keepFuelReserve;
         private ConfigEntry<FuelSourcePriority> _fuelSourcePriority;
@@ -52,6 +54,12 @@ namespace AutoRefillFires
         private bool _modEnabled = true;
 
         private float _nextCheckTime;
+
+        private class ContainerCandidate
+        {
+            public Container Container;
+            public float Distance;
+        }
 
         private void Awake()
         {
@@ -137,6 +145,13 @@ namespace AutoRefillFires
                 "FillBraziers",
                 true,
                 "Automatically refill braziers."
+            );
+
+            _fillBonfires = Config.Bind(
+                "Fireplace Types",
+                "FillBonfires",
+                true,
+                "Automatically refill bonfires."
             );
 
             _fillOtherFireplaces = Config.Bind(
@@ -243,28 +258,51 @@ namespace AutoRefillFires
                 .Replace("(Clone)", "")
                 .ToLowerInvariant();
 
-            // Campfire
-            if (objectName.Contains("firepit"))
-                return _fillCampfires.Value;
+            bool result;
+            string matchedRule;
 
-            // Hearth
-            if (objectName.Contains("hearth"))
-                return _fillHearths.Value;
+            if (objectName.Contains("fire_pit") || objectName.Contains("firepit"))
+            {
+                result = _fillCampfires.Value;
+                matchedRule = "FillCampfires";
+            }
+            else if (objectName.Contains("hearth"))
+            {
+                result = _fillHearths.Value;
+                matchedRule = "FillHearths";
+            }
+            else if (objectName.Contains("groundtorch"))
+            {
+                result = _fillStandingTorches.Value;
+                matchedRule = "FillStandingTorches";
+            }
+            else if (objectName.Contains("walltorch"))
+            {
+                result = _fillWallTorches.Value;
+                matchedRule = "FillWallTorches";
+            }
+            else if (objectName.Contains("brazier"))
+            {
+                result = _fillBraziers.Value;
+                matchedRule = "FillBraziers";
+            }
+            else if (objectName.Contains("bonfire"))
+            {
+                result = _fillBonfires.Value;
+                matchedRule = "FillBonfires";
+            }
+            else
+            {
+                result = _fillOtherFireplaces.Value;
+                matchedRule = "FillOtherFireplaces";
+            }
 
-            // All standing / ground torches, including colored variants
-            if (objectName.Contains("groundtorch"))
-                return _fillStandingTorches.Value;
+            LogDebug(
+                $"ShouldRefillFireplace: name='{fireplace.gameObject.name}', " +
+                $"normalized='{objectName}', matchedRule={matchedRule}, result={result}"
+            );
 
-            // All wall torches, including colored variants
-            if (objectName.Contains("walltorch"))
-                return _fillWallTorches.Value;
-
-            // Braziers
-            if (objectName.Contains("brazier"))
-                return _fillBraziers.Value;
-
-            // Unknown / modded Fireplace-based objects
-            return _fillOtherFireplaces.Value;
+            return result;
         }
 
         private void RefillNearbyFireplaces(Player player)
@@ -274,6 +312,29 @@ namespace AutoRefillFires
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None
                 );
+
+            Container[] containers = null;
+
+            // Only scan containers when container usage is actually enabled.
+            if (_useNearbyContainers.Value)
+            {
+                containers =
+                    Object.FindObjectsByType<Container>(
+                        FindObjectsInactive.Exclude,
+                        FindObjectsSortMode.None
+                    );
+            }
+
+            LogDebug(
+                $"Scan start: " +
+                $"loadedFireplaces={fireplaces.Length}, " +
+                $"loadedContainers={(containers != null ? containers.Length : 0)}, " +
+                $"fireplaceRadius={_radius.Value:0.0}m, " +
+                $"containerRadius={_containerRadius.Value:0.0}m"
+            );
+
+            int fireplacesInRange = 0;
+            int refillAttempts = 0;
 
             foreach (Fireplace fireplace in fireplaces)
             {
@@ -288,8 +349,28 @@ namespace AutoRefillFires
                 if (distance > _radius.Value)
                     continue;
 
-                TryRefillFireplace(player, fireplace);
+                fireplacesInRange++;
+
+                LogDebug(
+                    $"Fireplace in range: " +
+                    $"name='{fireplace.gameObject.name}', " +
+                    $"distance={distance:0.0}m"
+                );
+
+                refillAttempts++;
+
+                TryRefillFireplace(
+                    player,
+                    fireplace,
+                    containers
+                );
             }
+
+            LogDebug(
+                $"Scan end: " +
+                $"fireplacesInRange={fireplacesInRange}, " +
+                $"refillAttempts={refillAttempts}"
+            );
         }
 
         private bool IsOwnPiece(Player player, Fireplace fireplace)
@@ -309,13 +390,25 @@ namespace AutoRefillFires
             return piece.GetCreator() == player.GetPlayerID();
         }
 
-        private void TryRefillFireplace(Player player, Fireplace fireplace)
+        private void TryRefillFireplace(Player player, Fireplace fireplace, Container[] containers)
         {
+            LogDebug($"TryRefillFireplace START: '{fireplace.gameObject.name}'");
+
             if (!ShouldRefillFireplace(fireplace))
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - type/config filter returned false."
+                );
                 return;
+            }
 
             if (_onlyRefillOwnPieces.Value && !IsOwnPiece(player, fireplace))
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - not owned by local player."
+                );
                 return;
+            }
 
             ZNetView nview = fireplace.GetComponent<ZNetView>();
 
@@ -323,29 +416,65 @@ namespace AutoRefillFires
                 nview = fireplace.GetComponentInParent<ZNetView>();
 
             if (nview == null)
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - no ZNetView found."
+                );
                 return;
+            }
 
             if (!nview.IsValid())
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - ZNetView is not valid."
+                );
                 return;
+            }
 
             ZDO zdo = nview.GetZDO();
 
             if (zdo == null)
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - ZDO is null."
+                );
                 return;
+            }
 
             if (fireplace.m_fuelItem == null)
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - m_fuelItem is null."
+                );
                 return;
+            }
 
             float currentFuel = zdo.GetFloat(ZDOVars.s_fuel, 0f);
             float maxFuel = fireplace.m_maxFuel;
 
             if (maxFuel <= 0f)
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - maxFuel <= 0 ({maxFuel})."
+                );
                 return;
+            }
 
             float fuelPercent = currentFuel / maxFuel;
 
+            LogDebug(
+                $"Fuel state for '{fireplace.gameObject.name}': " +
+                $"currentFuel={currentFuel:0.0}, maxFuel={maxFuel:0.0}, " +
+                $"fuelPercent={fuelPercent:0.00}, threshold={_refillBelowPercent.Value:0.00}"
+            );
+
             if (fuelPercent >= _refillBelowPercent.Value)
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - fuelPercent >= threshold."
+                );
                 return;
+            }
 
             string fuelName =
                 fireplace.m_fuelItem.m_itemData.m_shared.m_name;
@@ -354,7 +483,12 @@ namespace AutoRefillFires
                 Mathf.CeilToInt(maxFuel - currentFuel);
 
             if (missingFuel <= 0)
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - missingFuel <= 0 ({missingFuel})."
+                );
                 return;
+            }
 
             int requestedFuel;
 
@@ -370,29 +504,54 @@ namespace AutoRefillFires
                 );
             }
 
+            LogDebug(
+                $"Refill request for '{fireplace.gameObject.name}': " +
+                $"fuel='{fuelName}', missingFuel={missingFuel}, requestedFuel={requestedFuel}, " +
+                $"refillMode={(_refillToMax.Value ? "max" : "fixed")}"
+            );
+
             if (requestedFuel <= 0)
+            {
+                LogDebug(
+                    $"Skipping '{fireplace.gameObject.name}' - requestedFuel <= 0."
+                );
                 return;
+            }
 
             int fuelAdded = 0;
 
-            for (int i = 0; i < requestedFuel; i++)
-            {
-                if (!TryConsumeFuel(
-                    player,
-                    fireplace,
-                    fuelName
-                ))
-                {
-                    break;
-                }
+            int fuelConsumed = ConsumeFuel(
+                player,
+                fireplace,
+                fuelName,
+                requestedFuel,
+                containers
+            );
 
+            if (fuelConsumed <= 0)
+            {
+                LogDebug(
+                    $"No usable fuel found for '{fireplace.gameObject.name}'."
+                );
+
+                return;
+            }
+
+            for (int i = 0; i < fuelConsumed; i++)
+            {
                 nview.InvokeRPC(
                     "RPC_AddFuel",
                     new object[0]
                 );
-
-                fuelAdded++;
             }
+
+            LogInfo(
+                $"Refilled {fireplace.name}: " +
+                $"{currentFuel:0.0}/{maxFuel:0.0}, " +
+                $"fuel={fuelName}, " +
+                $"added={fuelConsumed}, " +
+                $"mode={(_refillToMax.Value ? "max" : "fixed")}"
+            );
 
             if (fuelAdded > 0)
             {
@@ -406,77 +565,153 @@ namespace AutoRefillFires
             }
         }
 
-        private bool TryConsumeFuelFromPlayer(Player player, string fuelName)
+        private int ConsumeFuelFromPlayer(Player player, string fuelName, int requestedAmount)
         {
+            if (requestedAmount <= 0)
+                return 0;
+
             Inventory inventory = player.GetInventory();
 
             if (inventory == null)
-                return false;
+            {
+                LogDebug("Player inventory is null.");
+                return 0;
+            }
 
             int availableFuel =
                 inventory.CountItems(fuelName);
 
-            if (availableFuel <= _keepFuelReserve.Value)
-                return false;
+            int usableFuel =
+                Mathf.Max(
+                    availableFuel - _keepFuelReserve.Value,
+                    0
+                );
+
+            int amountToTake =
+                Mathf.Min(
+                    requestedAmount,
+                    usableFuel
+                );
+
+            if (amountToTake <= 0)
+            {
+                LogDebug(
+                    $"Player inventory: fuel='{fuelName}', " +
+                    $"available={availableFuel}, " +
+                    $"reserve={_keepFuelReserve.Value}, " +
+                    $"usable=0"
+                );
+
+                return 0;
+            }
 
             inventory.RemoveItem(
                 fuelName,
-                1
+                amountToTake
             );
 
             LogDebug(
-                $"Fuel {fuelName} taken from player inventory. " +
-                $"Remaining: {availableFuel - 1}"
+                $"Player inventory: consumed={amountToTake}x {fuelName}, " +
+                $"before={availableFuel}, " +
+                $"remaining={availableFuel - amountToTake}"
             );
 
-            return true;
+            return amountToTake;
         }
 
-        private bool TryConsumeFuel(Player player, Fireplace fireplace, string fuelName)
+        private int ConsumeFuel(
+            Player player, 
+            Fireplace fireplace, 
+            string fuelName, 
+            int requestedAmount, 
+            Container[] containers
+            )
         {
+            if (requestedAmount <= 0)
+                return 0;
+
+            LogDebug(
+                $"Fuel request: " +
+                $"fuel='{fuelName}', " +
+                $"requested={requestedAmount}, " +
+                $"priority={_fuelSourcePriority.Value}, " +
+                $"containers={_useNearbyContainers.Value}, " +
+                $"reserve={_keepFuelReserve.Value}"
+            );
+
+            int consumed = 0;
+
             if (_fuelSourcePriority.Value == FuelSourcePriority.ContainersFirst)
             {
-                if (_useNearbyContainers.Value &&
-                    TryConsumeFuelFromNearbyContainer(
-                        fireplace,
-                        fuelName))
+                if (_useNearbyContainers.Value && containers != null)
                 {
-                    return true;
+                    consumed += ConsumeFuelFromNearbyContainers(
+                        fireplace,
+                        fuelName,
+                        requestedAmount - consumed,
+                        containers
+                    );
                 }
 
-                return TryConsumeFuelFromPlayer(
-                    player,
-                    fuelName
-                );
+                if (consumed < requestedAmount)
+                {
+                    consumed += ConsumeFuelFromPlayer(
+                        player,
+                        fuelName,
+                        requestedAmount - consumed
+                    );
+                }
             }
-
-            // PlayerFirst
-            if (TryConsumeFuelFromPlayer(
-                player,
-                fuelName))
+            else
             {
-                return true;
+                consumed += ConsumeFuelFromPlayer(
+                    player,
+                    fuelName,
+                    requestedAmount
+                );
+
+                if (
+                    _useNearbyContainers.Value &&
+                    containers != null &&
+                    consumed < requestedAmount
+                )
+                {
+                    consumed += ConsumeFuelFromNearbyContainers(
+                        fireplace,
+                        fuelName,
+                        requestedAmount - consumed,
+                        containers
+                    );
+                }
             }
 
-            if (!_useNearbyContainers.Value)
-                return false;
-
-            return TryConsumeFuelFromNearbyContainer(
-                fireplace,
-                fuelName
+            LogDebug(
+                $"Fuel request result: " +
+                $"fuel='{fuelName}', " +
+                $"requested={requestedAmount}, " +
+                $"consumed={consumed}"
             );
+
+            return consumed;
         }
 
-        private bool TryConsumeFuelFromNearbyContainer(Fireplace fireplace, string fuelName)
+        private int ConsumeFuelFromNearbyContainers(
+    Fireplace fireplace,
+    string fuelName,
+    int requestedAmount,
+    Container[] containers)
         {
-            Container[] containers =
-                Object.FindObjectsByType<Container>(
-                    FindObjectsInactive.Exclude,
-                    FindObjectsSortMode.None
-                );
+            if (requestedAmount <= 0)
+                return 0;
 
-            Container closestContainer = null;
-            float closestDistance = float.MaxValue;
+            if (containers == null || containers.Length == 0)
+            {
+                LogDebug("Container scan: no loaded containers available.");
+                return 0;
+            }
+
+            List<ContainerCandidate> candidates =
+                new List<ContainerCandidate>();
 
             foreach (Container container in containers)
             {
@@ -500,58 +735,115 @@ namespace AutoRefillFires
                 int availableFuel =
                     inventory.CountItems(fuelName);
 
-                /*
-                 * Never use the configured reserve.
-                 *
-                 * Example:
-                 * reserve = 10
-                 * chest contains 10 -> skip
-                 * chest contains 11 -> usable
-                 */
-                if (availableFuel <= _keepFuelReserve.Value)
+                int usableFuel =
+                    Mathf.Max(
+                        availableFuel - _keepFuelReserve.Value,
+                        0
+                    );
+
+                if (usableFuel <= 0)
                     continue;
 
-                if (distance < closestDistance)
-                {
-                    closestDistance = distance;
-                    closestContainer = container;
-                }
+                candidates.Add(
+                    new ContainerCandidate
+                    {
+                        Container = container,
+                        Distance = distance
+                    }
+                );
             }
 
-            if (closestContainer == null)
-                return false;
-
-            Inventory chestInventory =
-                closestContainer.GetInventory();
-
-            if (chestInventory == null)
-                return false;
-
-            int chestFuel =
-                chestInventory.CountItems(fuelName);
-
-            if (chestFuel <= _keepFuelReserve.Value)
-                return false;
-
-            chestInventory.RemoveItem(
-                fuelName,
-                1
+            candidates.Sort(
+                (a, b) => a.Distance.CompareTo(b.Distance)
             );
 
             LogDebug(
-                $"Fuel {fuelName} taken from container " +
-                $"{closestContainer.name} " +
-                $"({closestDistance:0.0}m). " +
-                $"Remaining: {chestFuel - 1}"
+                $"Container candidates: " +
+                $"fuel='{fuelName}', " +
+                $"usable={candidates.Count}, " +
+                $"radius={_containerRadius.Value:0.0}m"
             );
 
-            return true;
+            int consumed = 0;
+            int containersUsed = 0;
+
+            foreach (ContainerCandidate candidate in candidates)
+            {
+                if (consumed >= requestedAmount)
+                    break;
+
+                Container container =
+                    candidate.Container;
+
+                Inventory inventory =
+                    container.GetInventory();
+
+                if (inventory == null)
+                    continue;
+
+                int availableFuel =
+                    inventory.CountItems(fuelName);
+
+                int usableFuel =
+                    Mathf.Max(
+                        availableFuel - _keepFuelReserve.Value,
+                        0
+                    );
+
+                if (usableFuel <= 0)
+                    continue;
+
+                int remainingNeeded =
+                    requestedAmount - consumed;
+
+                int amountToTake =
+                    Mathf.Min(
+                        remainingNeeded,
+                        usableFuel
+                    );
+
+                if (amountToTake <= 0)
+                    continue;
+
+                inventory.RemoveItem(
+                    fuelName,
+                    amountToTake
+                );
+
+                consumed += amountToTake;
+                containersUsed++;
+
+                LogDebug(
+                    $"Container '{container.name}' " +
+                    $"({candidate.Distance:0.0}m): " +
+                    $"consumed={amountToTake}x {fuelName}, " +
+                    $"before={availableFuel}, " +
+                    $"remaining={availableFuel - amountToTake}"
+                );
+            }
+
+            if (consumed <= 0)
+            {
+                LogDebug(
+                    $"Container result: no usable '{fuelName}' found."
+                );
+            }
+            else
+            {
+                LogDebug(
+                    $"Container result: " +
+                    $"consumed={consumed}x {fuelName}, " +
+                    $"containersUsed={containersUsed}"
+                );
+            }
+
+            return consumed;
         }
 
         private void LogDebug(string message)
         {
             if (_logLevel.Value >= ModLogLevel.Debug)
-                Logger.LogDebug(message);
+                Logger.LogInfo($"[DEBUG] {message}");
         }
 
         private void LogInfo(string message)
