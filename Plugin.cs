@@ -4,6 +4,14 @@ using UnityEngine;
 
 namespace AutoRefillFires
 {
+    public enum ModLogLevel
+    {
+        None = 0,
+        Error = 1,
+        Warning = 2,
+        Info = 3,
+        Debug = 4
+    }
     public enum FuelSourcePriority
     {
         PlayerFirst,
@@ -40,6 +48,7 @@ namespace AutoRefillFires
         private ConfigEntry<FuelSourcePriority> _fuelSourcePriority;
         private ConfigEntry<bool> _onlyRefillOwnPieces;
         private ConfigEntry<KeyboardShortcut> _toggleHotkey;
+        private ConfigEntry<ModLogLevel> _logLevel;
         private bool _modEnabled = true;
 
         private float _nextCheckTime;
@@ -165,6 +174,13 @@ namespace AutoRefillFires
                 "If enabled, only refill fireplaces and torches built by the local player."
             );
 
+            _logLevel = Config.Bind(
+                "Logging",
+                "LogLevel",
+                ModLogLevel.Info,
+                "Logging verbosity. Available values: None, Error, Warning, Info, Debug."
+            );
+
             Logger.LogInfo("Auto Refill Fires loaded!");
         }
 
@@ -173,6 +189,20 @@ namespace AutoRefillFires
             if (_toggleHotkey.Value.IsDown())
             {
                 _modEnabled = !_modEnabled;
+
+                // Reload config when turning the mod OFF
+                if (!_modEnabled)
+                {
+                    try
+                    {
+                        Config.Reload();
+                        LogInfo("Configuration reloaded.");
+                    }
+                    catch (System.Exception ex)
+                    {
+                        LogError($"Failed to reload configuration: {ex}");
+                    }
+                }
 
                 string status = _modEnabled
                     ? "Auto Refill Fires: ENABLED"
@@ -188,7 +218,7 @@ namespace AutoRefillFires
                     );
                 }
 
-                Logger.LogInfo(status);
+                LogInfo(status);
             }
 
             if (!_modEnabled)
@@ -366,7 +396,7 @@ namespace AutoRefillFires
 
             if (fuelAdded > 0)
             {
-                Logger.LogInfo(
+                LogInfo(
                     $"Refilled {fireplace.name}: " +
                     $"{currentFuel:0.0}/{maxFuel:0.0}, " +
                     $"fuel={fuelName}, " +
@@ -394,7 +424,7 @@ namespace AutoRefillFires
                 1
             );
 
-            Logger.LogDebug(
+            LogDebug(
                 $"Fuel {fuelName} taken from player inventory. " +
                 $"Remaining: {availableFuel - 1}"
             );
@@ -508,7 +538,7 @@ namespace AutoRefillFires
                 1
             );
 
-            Logger.LogDebug(
+            LogDebug(
                 $"Fuel {fuelName} taken from container " +
                 $"{closestContainer.name} " +
                 $"({closestDistance:0.0}m). " +
@@ -516,6 +546,30 @@ namespace AutoRefillFires
             );
 
             return true;
+        }
+
+        private void LogDebug(string message)
+        {
+            if (_logLevel.Value >= ModLogLevel.Debug)
+                Logger.LogDebug(message);
+        }
+
+        private void LogInfo(string message)
+        {
+            if (_logLevel.Value >= ModLogLevel.Info)
+                Logger.LogInfo(message);
+        }
+
+        private void LogWarning(string message)
+        {
+            if (_logLevel.Value >= ModLogLevel.Warning)
+                Logger.LogWarning(message);
+        }
+
+        private void LogError(string message)
+        {
+            if (_logLevel.Value >= ModLogLevel.Error)
+                Logger.LogError(message);
         }
     }
 }
