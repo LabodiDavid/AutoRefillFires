@@ -6,7 +6,7 @@
 	  <RootNamespace>AutoRefillFires</RootNamespace>
 	  <LangVersion>latest</LangVersion>
 
-	  <PluginVersion>1.0.0</PluginVersion>
+	  <PluginVersion>1.1.0</PluginVersion>
 
 	  <ValheimPath>D:\SteamLibrary\steamapps\common\Valheim</ValheimPath>
 	  <R2ProfileName>Default</R2ProfileName>
