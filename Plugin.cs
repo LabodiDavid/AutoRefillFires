@@ -4,6 +4,11 @@ using UnityEngine;
 
 namespace AutoRefillFires
 {
+    public enum FuelSourcePriority
+    {
+        PlayerFirst,
+        ContainersFirst
+    }
 
     [BepInPlugin(
         Plugin.PluginGuid,
@@ -31,6 +36,9 @@ namespace AutoRefillFires
         private ConfigEntry<bool> _fillWallTorches;
         private ConfigEntry<bool> _fillBraziers;
         private ConfigEntry<bool> _fillOtherFireplaces;
+        private ConfigEntry<int> _keepFuelReserve;
+        private ConfigEntry<FuelSourcePriority> _fuelSourcePriority;
+        private ConfigEntry<bool> _onlyRefillOwnPieces;
         private ConfigEntry<KeyboardShortcut> _toggleHotkey;
         private bool _modEnabled = true;
 
@@ -136,6 +144,27 @@ namespace AutoRefillFires
                 "Hotkey used to enable or disable automatic refilling."
             );
 
+            _keepFuelReserve = Config.Bind(
+                "Fuel",
+                "KeepFuelReserve",
+                0,
+                "Minimum amount of fuel to keep in the source inventory. 10 means the last 10 Wood/Resin will not be used."
+            );
+
+            _fuelSourcePriority = Config.Bind(
+                "Fuel",
+                "FuelSourcePriority",
+                FuelSourcePriority.PlayerFirst,
+                "Select whether player inventory or nearby containers should be used first."
+            );
+
+            _onlyRefillOwnPieces = Config.Bind(
+                "General",
+                "OnlyRefillOwnPieces",
+                false,
+                "If enabled, only refill fireplaces and torches built by the local player."
+            );
+
             Logger.LogInfo("Auto Refill Fires loaded!");
         }
 
@@ -233,10 +262,31 @@ namespace AutoRefillFires
             }
         }
 
+        private bool IsOwnPiece(Player player, Fireplace fireplace)
+        {
+            Piece piece = fireplace.GetComponent<Piece>();
+
+            if (piece == null)
+                piece = fireplace.GetComponentInParent<Piece>();
+
+            if (piece == null)
+            {
+                // Unknown/modded fireplace without a Piece component.
+                // Don't block it.
+                return true;
+            }
+
+            return piece.GetCreator() == player.GetPlayerID();
+        }
+
         private void TryRefillFireplace(Player player, Fireplace fireplace)
         {
             if (!ShouldRefillFireplace(fireplace))
                 return;
+
+            if (_onlyRefillOwnPieces.Value && !IsOwnPiece(player, fireplace))
+                return;
+
             ZNetView nview = fireplace.GetComponent<ZNetView>();
 
             if (nview == null)
@@ -326,18 +376,55 @@ namespace AutoRefillFires
             }
         }
 
+        private bool TryConsumeFuelFromPlayer(Player player, string fuelName)
+        {
+            Inventory inventory = player.GetInventory();
+
+            if (inventory == null)
+                return false;
+
+            int availableFuel =
+                inventory.CountItems(fuelName);
+
+            if (availableFuel <= _keepFuelReserve.Value)
+                return false;
+
+            inventory.RemoveItem(
+                fuelName,
+                1
+            );
+
+            Logger.LogDebug(
+                $"Fuel {fuelName} taken from player inventory. " +
+                $"Remaining: {availableFuel - 1}"
+            );
+
+            return true;
+        }
+
         private bool TryConsumeFuel(Player player, Fireplace fireplace, string fuelName)
         {
-            Inventory playerInventory = player.GetInventory();
-
-            if (playerInventory.CountItems(fuelName) > 0)
+            if (_fuelSourcePriority.Value == FuelSourcePriority.ContainersFirst)
             {
-                playerInventory.RemoveItem(fuelName, 1);
+                if (_useNearbyContainers.Value &&
+                    TryConsumeFuelFromNearbyContainer(
+                        fireplace,
+                        fuelName))
+                {
+                    return true;
+                }
 
-                Logger.LogDebug(
-                    $"Fuel {fuelName} taken from player inventory."
+                return TryConsumeFuelFromPlayer(
+                    player,
+                    fuelName
                 );
+            }
 
+            // PlayerFirst
+            if (TryConsumeFuelFromPlayer(
+                player,
+                fuelName))
+            {
                 return true;
             }
 
@@ -350,9 +437,7 @@ namespace AutoRefillFires
             );
         }
 
-        private bool TryConsumeFuelFromNearbyContainer(
-            Fireplace fireplace,
-            string fuelName)
+        private bool TryConsumeFuelFromNearbyContainer(Fireplace fireplace, string fuelName)
         {
             Container[] containers =
                 Object.FindObjectsByType<Container>(
@@ -376,12 +461,24 @@ namespace AutoRefillFires
                 if (distance > _containerRadius.Value)
                     continue;
 
-                Inventory inventory = container.GetInventory();
+                Inventory inventory =
+                    container.GetInventory();
 
                 if (inventory == null)
                     continue;
 
-                if (inventory.CountItems(fuelName) <= 0)
+                int availableFuel =
+                    inventory.CountItems(fuelName);
+
+                /*
+                 * Never use the configured reserve.
+                 *
+                 * Example:
+                 * reserve = 10
+                 * chest contains 10 -> skip
+                 * chest contains 11 -> usable
+                 */
+                if (availableFuel <= _keepFuelReserve.Value)
                     continue;
 
                 if (distance < closestDistance)
@@ -400,15 +497,22 @@ namespace AutoRefillFires
             if (chestInventory == null)
                 return false;
 
-            if (chestInventory.CountItems(fuelName) <= 0)
+            int chestFuel =
+                chestInventory.CountItems(fuelName);
+
+            if (chestFuel <= _keepFuelReserve.Value)
                 return false;
 
-            chestInventory.RemoveItem(fuelName, 1);
+            chestInventory.RemoveItem(
+                fuelName,
+                1
+            );
 
-            Logger.LogInfo(
+            Logger.LogDebug(
                 $"Fuel {fuelName} taken from container " +
                 $"{closestContainer.name} " +
-                $"({closestDistance:0.0}m)"
+                $"({closestDistance:0.0}m). " +
+                $"Remaining: {chestFuel - 1}"
             );
 
             return true;
