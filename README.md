@@ -3,18 +3,11 @@
 
 A lightweight BepInEx mod for Valheim that automatically refills nearby fireplaces and torches.
 
-## Changelog - v1.1.0
+## What's New in 1.2.0
 ##### [Full CHANGELOG](https://github.com/LabodiDavid/AutoRefillFires/blob/main/Thunderstore/CHANGELOG.md)
-- Added configurable toggle hotkey (`F7` by default)
-- Added `KeepFuelReserve` to keep a minimum amount of fuel untouched
-- Added fuel source priority:
-  - `PlayerFirst`
-  - `ContainersFirst`
-- Added setting for bonfires
-- Nearby containers are used from closest to farthest
-- Added `OnlyRefillOwnPieces` (setting to refill only fires what you built)
-- Added configurable log levels
-- Optimized container scanning, fire detection
+- Added automatic Hot Tub refilling with a separate `FillHotTubs` toggle
+- Fixed Resin candles being incorrectly treated as refillable objects
+- Major internal refactor and code cleanup
 
 ## Features
 

@@ -2,6 +2,28 @@
 
 All notable changes to Auto Refill Fires will be documented in this file.
 
+## [1.2.0] - 2026-09-06
+
+### Added
+
+- Added automatic Hot Tub refilling support.
+- Added a separate `FillHotTubs` configuration option.
+- Hot Tubs use the same fuel source, reserve, priority and refill settings as other supported objects.
+
+### Changed
+
+- Refactored the plugin into separate components for configuration, fuel handling, fireplace refilling, hot tub refilling, logging and scan coordination.
+- Simplified `Plugin.cs` so it mainly handles plugin startup, toggle state and scan timing.
+- Added shared logging through `ModLogger`.
+- Cleaned up unused code and imports.
+- Standardized and simplified code formatting across the project.
+- Improved internal code organization and maintainability.
+
+### Fixed
+
+- Fixed Resin candles being incorrectly detected as refillable fireplaces.
+- Removed leftover dead code from the previous fuel refill implementation.
+
 ## [1.1.0] - 2026-08-29
 
 ### Added
