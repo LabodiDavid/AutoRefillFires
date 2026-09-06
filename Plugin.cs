@@ -60,6 +60,12 @@ namespace AutoRefillFires
             public Container Container;
             public float Distance;
         }
+        private class FireplaceCandidate
+        {
+            public Fireplace Fireplace;
+            public float Distance;
+            public float FuelPercent;
+        }
 
         private void Awake()
         {
@@ -315,7 +321,6 @@ namespace AutoRefillFires
 
             Container[] containers = null;
 
-            // Only scan containers when container usage is actually enabled.
             if (_useNearbyContainers.Value)
             {
                 containers =
@@ -325,16 +330,8 @@ namespace AutoRefillFires
                     );
             }
 
-            LogDebug(
-                $"Scan start: " +
-                $"loadedFireplaces={fireplaces.Length}, " +
-                $"loadedContainers={(containers != null ? containers.Length : 0)}, " +
-                $"fireplaceRadius={_radius.Value:0.0}m, " +
-                $"containerRadius={_containerRadius.Value:0.0}m"
-            );
-
-            int fireplacesInRange = 0;
-            int refillAttempts = 0;
+            List<FireplaceCandidate> candidates =
+                new List<FireplaceCandidate>();
 
             foreach (Fireplace fireplace in fireplaces)
             {
@@ -349,28 +346,93 @@ namespace AutoRefillFires
                 if (distance > _radius.Value)
                     continue;
 
-                fireplacesInRange++;
+                ZNetView nview =
+                    fireplace.GetComponent<ZNetView>();
 
-                LogDebug(
-                    $"Fireplace in range: " +
-                    $"name='{fireplace.gameObject.name}', " +
-                    $"distance={distance:0.0}m"
+                if (nview == null)
+                    nview = fireplace.GetComponentInParent<ZNetView>();
+
+                if (nview == null || !nview.IsValid())
+                    continue;
+
+                ZDO zdo = nview.GetZDO();
+
+                if (zdo == null)
+                    continue;
+
+                float maxFuel =
+                    fireplace.m_maxFuel;
+
+                if (maxFuel <= 0f)
+                    continue;
+
+                float currentFuel =
+                    zdo.GetFloat(
+                        ZDOVars.s_fuel,
+                        0f
+                    );
+
+                float fuelPercent =
+                    currentFuel / maxFuel;
+
+                candidates.Add(
+                    new FireplaceCandidate
+                    {
+                        Fireplace = fireplace,
+                        Distance = distance,
+                        FuelPercent = fuelPercent
+                    }
                 );
+            }
 
-                refillAttempts++;
+            /*
+             * Priority:
+             *
+             * 1. Lowest fuel percentage first
+             * 2. If equal, nearest fireplace first
+             */
+            candidates.Sort(
+                (a, b) =>
+                {
+                    int fuelCompare =
+                        a.FuelPercent.CompareTo(
+                            b.FuelPercent
+                        );
+
+                    if (fuelCompare != 0)
+                        return fuelCompare;
+
+                    return a.Distance.CompareTo(
+                        b.Distance
+                    );
+                }
+            );
+
+            LogDebug(
+                $"Scan start: " +
+                $"loadedFireplaces={fireplaces.Length}, " +
+                $"inRange={candidates.Count}, " +
+                $"loadedContainers={(containers != null ? containers.Length : 0)}, " +
+                $"radius={_radius.Value:0.0}m"
+            );
+
+            foreach (FireplaceCandidate candidate in candidates)
+            {
+                LogDebug(
+                    $"Priority: " +
+                    $"name='{candidate.Fireplace.gameObject.name}', " +
+                    $"fuel={candidate.FuelPercent * 100f:0.0}%, " +
+                    $"distance={candidate.Distance:0.0}m"
+                );
 
                 TryRefillFireplace(
                     player,
-                    fireplace,
+                    candidate.Fireplace,
                     containers
                 );
             }
 
-            LogDebug(
-                $"Scan end: " +
-                $"fireplacesInRange={fireplacesInRange}, " +
-                $"refillAttempts={refillAttempts}"
-            );
+            LogDebug("Scan end.");
         }
 
         private bool IsOwnPiece(Player player, Fireplace fireplace)
