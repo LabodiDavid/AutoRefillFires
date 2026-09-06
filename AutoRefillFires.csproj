@@ -6,7 +6,7 @@
 	  <RootNamespace>AutoRefillFires</RootNamespace>
 	  <LangVersion>latest</LangVersion>
 
-	  <PluginVersion>1.1.0</PluginVersion>
+	  <PluginVersion>1.2.0</PluginVersion>
 
 	  <ValheimPath>D:\SteamLibrary\steamapps\common\Valheim</ValheimPath>
 	  <R2ProfileName>Default</R2ProfileName>
@@ -60,11 +60,7 @@
   </Target>
   
     <Target Name="GenerateVersionInfo" BeforeTargets="BeforeCompile">
-	  <WriteLinesToFile
-		File="$(IntermediateOutputPath)VersionInfo.cs"
-		Overwrite="true"
-		Lines="namespace AutoRefillFires { internal static class VersionInfo { public const string Version = &quot;$(PluginVersion)&quot;%3B } }"
-	  />
+	  <WriteLinesToFile File="$(IntermediateOutputPath)VersionInfo.cs" Overwrite="true" Lines="namespace AutoRefillFires { internal static class VersionInfo { public const string Version = &quot;$(PluginVersion)&quot;%3B } }" />
 
 	  <ItemGroup>
 		<Compile Include="$(IntermediateOutputPath)VersionInfo.cs" />
@@ -84,21 +80,13 @@
 	  <MakeDir Directories="$(PackageRoot)" />
 	  <MakeDir Directories="$(PackagePlugins)" />
 
-	  <Copy
-		SourceFiles="$(TargetPath)"
-		DestinationFolder="$(PackagePlugins)" />
+	  <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PackagePlugins)" />
 
-	  <Copy
-		SourceFiles="$(SolutionDir)Thunderstore\README.md"
-		DestinationFolder="$(PackageRoot)" />
+	  <Copy SourceFiles="$(SolutionDir)Thunderstore\README.md" DestinationFolder="$(PackageRoot)" />
 
-	  <Copy
-		SourceFiles="$(SolutionDir)Thunderstore\CHANGELOG.md"
-		DestinationFolder="$(PackageRoot)" />
+	  <Copy SourceFiles="$(SolutionDir)Thunderstore\CHANGELOG.md" DestinationFolder="$(PackageRoot)" />
 
-	  <Copy
-		SourceFiles="$(SolutionDir)Thunderstore\icon.png"
-		DestinationFolder="$(PackageRoot)" />
+	  <Copy SourceFiles="$(SolutionDir)Thunderstore\icon.png" DestinationFolder="$(PackageRoot)" />
 
 	  <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;(Get-Content '$(SolutionDir)Thunderstore\manifest.json' -Raw).Replace('__VERSION__', '$(PluginVersion)') | Set-Content '$(PackageRoot)\manifest.json' -Encoding UTF8&quot;" />
 
