@@ -1,7 +1,8 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
-using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine;
+using static UnityEngine.GraphicsBuffer;
 
 namespace AutoRefillFires
 {
@@ -45,6 +46,7 @@ namespace AutoRefillFires
         private ConfigEntry<bool> _fillWallTorches;
         private ConfigEntry<bool> _fillBraziers;
         private ConfigEntry<bool> _fillBonfires;
+        private ConfigEntry<bool> _fillHotTubs;
         private ConfigEntry<bool> _fillOtherFireplaces;
         private ConfigEntry<int> _keepFuelReserve;
         private ConfigEntry<FuelSourcePriority> _fuelSourcePriority;
@@ -158,6 +160,13 @@ namespace AutoRefillFires
                 "FillBonfires",
                 true,
                 "Automatically refill bonfires."
+            );
+
+            _fillHotTubs = Config.Bind(
+                "Fireplace Types",
+                "FillHotTubs",
+                true,
+                "Automatically refill hot tubs."
             );
 
             _fillOtherFireplaces = Config.Bind(
@@ -297,6 +306,11 @@ namespace AutoRefillFires
                 result = _fillBonfires.Value;
                 matchedRule = "FillBonfires";
             }
+            else if (objectName.Contains("hottub") || objectName.Contains("hot_tub"))
+            {
+                result = _fillHotTubs.Value;
+                matchedRule = "FillHotTubs";
+            }
             else
             {
                 result = _fillOtherFireplaces.Value;
@@ -318,6 +332,17 @@ namespace AutoRefillFires
                     FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None
                 );
+
+            Smelter[] smelters = null;
+
+            if (_fillHotTubs.Value)
+            {
+                smelters =
+                    Object.FindObjectsByType<Smelter>(
+                        FindObjectsInactive.Exclude,
+                        FindObjectsSortMode.None
+                    );
+            }
 
             Container[] containers = null;
 
@@ -432,7 +457,195 @@ namespace AutoRefillFires
                 );
             }
 
+            if (_fillHotTubs.Value && smelters != null)
+            {
+                RefillNearbyHotTubs(
+                    player,
+                    smelters,
+                    containers
+                );
+            }
+
             LogDebug("Scan end.");
+        }
+
+        private void RefillNearbyHotTubs(
+            Player player,
+            Smelter[] smelters,
+            Container[] containers)
+        {
+            int hotTubsInRange = 0;
+
+            foreach (Smelter smelter in smelters)
+            {
+                if (smelter == null)
+                    continue;
+
+                string objectName =
+                    smelter.gameObject.name
+                        .Replace("(Clone)", "")
+                        .ToLowerInvariant();
+
+                if (objectName != "piece_bathtub")
+                    continue;
+
+                float distance = Vector3.Distance(
+                    player.transform.position,
+                    smelter.transform.position
+                );
+
+                if (distance > _radius.Value)
+                    continue;
+
+                hotTubsInRange++;
+
+                LogDebug(
+                    $"Hot tub in range: " +
+                    $"name='{smelter.gameObject.name}', " +
+                    $"distance={distance:0.0}m"
+                );
+
+                TryRefillHotTub(
+                    player,
+                    smelter,
+                    containers
+                );
+            }
+
+            LogDebug(
+                $"Hot tub scan end: inRange={hotTubsInRange}"
+            );
+        }
+
+        private void TryRefillHotTub(
+    Player player,
+    Smelter smelter,
+    Container[] containers)
+        {
+            if (smelter == null)
+                return;
+
+            ZNetView nview =
+                smelter.GetComponent<ZNetView>();
+
+            if (nview == null)
+                nview = smelter.GetComponentInParent<ZNetView>();
+
+            if (nview == null || !nview.IsValid())
+            {
+                LogDebug("Hot tub: invalid ZNetView.");
+                return;
+            }
+
+            ZDO zdo = nview.GetZDO();
+
+            if (zdo == null)
+            {
+                LogDebug("Hot tub: ZDO is null.");
+                return;
+            }
+
+            if (
+                smelter.m_fuelItem == null ||
+                smelter.m_fuelItem.m_itemData == null ||
+                smelter.m_fuelItem.m_itemData.m_shared == null
+            )
+            {
+                LogDebug("Hot tub: fuel item is null.");
+                return;
+            }
+
+            string fuelName =
+                smelter.m_fuelItem.m_itemData.m_shared.m_name;
+
+            float currentFuel =
+                zdo.GetFloat(
+                    ZDOVars.s_fuel,
+                    0f
+                );
+
+            float maxFuel =
+                smelter.m_maxFuel;
+
+            if (maxFuel <= 0f)
+                return;
+
+            float fuelPercent =
+                currentFuel / maxFuel;
+
+            LogDebug(
+                $"Hot tub fuel state: " +
+                $"fuel='{fuelName}', " +
+                $"current={currentFuel:0.00}, " +
+                $"max={maxFuel:0.00}, " +
+                $"percent={fuelPercent * 100f:0.0}%, " +
+                $"threshold={_refillBelowPercent.Value * 100f:0.0}%"
+            );
+
+            if (fuelPercent >= _refillBelowPercent.Value)
+            {
+                LogDebug(
+                    "Skipping hot tub - fuelPercent >= threshold."
+                );
+
+                return;
+            }
+
+            int missingFuel =
+                Mathf.CeilToInt(
+                    maxFuel - currentFuel
+                );
+
+            int requestedFuel =
+                _refillToMax.Value
+                    ? missingFuel
+                    : Mathf.Min(
+                        _refillAmount.Value,
+                        missingFuel
+                    );
+
+            if (requestedFuel <= 0)
+                return;
+
+            LogDebug(
+                $"Hot tub refill requested: " +
+                $"missing={missingFuel}, " +
+                $"requested={requestedFuel}"
+            );
+
+            int fuelConsumed =
+                ConsumeFuel(
+                    player,
+                    smelter.transform,
+                    fuelName,
+                    requestedFuel,
+                    containers
+                );
+
+            if (fuelConsumed <= 0)
+            {
+                LogDebug(
+                    "Hot tub refill stopped: no usable fuel."
+                );
+
+                return;
+            }
+
+            for (int i = 0; i < fuelConsumed; i++)
+            {
+                nview.InvokeRPC(
+                    "RPC_AddFuel",
+                    new object[0]
+                );
+            }
+
+            LogInfo(
+                $"Refilled hot tub: " +
+                $"{currentFuel:0.0}/{maxFuel:0.0}, " +
+                $"fuel={fuelName}, " +
+                $"added={fuelConsumed}, " +
+                $"mode={(_refillToMax.Value ? "max" : "fixed")}"
+            );
         }
 
         private bool IsOwnPiece(Player player, Fireplace fireplace)
@@ -584,7 +797,7 @@ namespace AutoRefillFires
 
             int fuelConsumed = ConsumeFuel(
                 player,
-                fireplace,
+                fireplace.transform,
                 fuelName,
                 requestedFuel,
                 containers
@@ -682,12 +895,11 @@ namespace AutoRefillFires
         }
 
         private int ConsumeFuel(
-            Player player, 
-            Fireplace fireplace, 
-            string fuelName, 
-            int requestedAmount, 
-            Container[] containers
-            )
+            Player player,
+            Transform target,
+            string fuelName,
+            int requestedAmount,
+            Container[] containers)
         {
             if (requestedAmount <= 0)
                 return 0;
@@ -708,7 +920,7 @@ namespace AutoRefillFires
                 if (_useNearbyContainers.Value && containers != null)
                 {
                     consumed += ConsumeFuelFromNearbyContainers(
-                        fireplace,
+                        target,
                         fuelName,
                         requestedAmount - consumed,
                         containers
@@ -739,7 +951,7 @@ namespace AutoRefillFires
                 )
                 {
                     consumed += ConsumeFuelFromNearbyContainers(
-                        fireplace,
+                        target,
                         fuelName,
                         requestedAmount - consumed,
                         containers
@@ -758,19 +970,16 @@ namespace AutoRefillFires
         }
 
         private int ConsumeFuelFromNearbyContainers(
-    Fireplace fireplace,
-    string fuelName,
-    int requestedAmount,
-    Container[] containers)
+            Transform target,
+            string fuelName,
+            int requestedAmount,
+            Container[] containers)
         {
             if (requestedAmount <= 0)
                 return 0;
 
             if (containers == null || containers.Length == 0)
-            {
-                LogDebug("Container scan: no loaded containers available.");
                 return 0;
-            }
 
             List<ContainerCandidate> candidates =
                 new List<ContainerCandidate>();
@@ -781,7 +990,7 @@ namespace AutoRefillFires
                     continue;
 
                 float distance = Vector3.Distance(
-                    fireplace.transform.position,
+                    target.position,
                     container.transform.position
                 );
 
@@ -819,26 +1028,15 @@ namespace AutoRefillFires
                 (a, b) => a.Distance.CompareTo(b.Distance)
             );
 
-            LogDebug(
-                $"Container candidates: " +
-                $"fuel='{fuelName}', " +
-                $"usable={candidates.Count}, " +
-                $"radius={_containerRadius.Value:0.0}m"
-            );
-
             int consumed = 0;
-            int containersUsed = 0;
 
             foreach (ContainerCandidate candidate in candidates)
             {
                 if (consumed >= requestedAmount)
                     break;
 
-                Container container =
-                    candidate.Container;
-
                 Inventory inventory =
-                    container.GetInventory();
+                    candidate.Container.GetInventory();
 
                 if (inventory == null)
                     continue;
@@ -855,17 +1053,11 @@ namespace AutoRefillFires
                 if (usableFuel <= 0)
                     continue;
 
-                int remainingNeeded =
-                    requestedAmount - consumed;
-
                 int amountToTake =
                     Mathf.Min(
-                        remainingNeeded,
+                        requestedAmount - consumed,
                         usableFuel
                     );
-
-                if (amountToTake <= 0)
-                    continue;
 
                 inventory.RemoveItem(
                     fuelName,
@@ -873,29 +1065,11 @@ namespace AutoRefillFires
                 );
 
                 consumed += amountToTake;
-                containersUsed++;
 
                 LogDebug(
-                    $"Container '{container.name}' " +
+                    $"Container '{candidate.Container.name}' " +
                     $"({candidate.Distance:0.0}m): " +
-                    $"consumed={amountToTake}x {fuelName}, " +
-                    $"before={availableFuel}, " +
-                    $"remaining={availableFuel - amountToTake}"
-                );
-            }
-
-            if (consumed <= 0)
-            {
-                LogDebug(
-                    $"Container result: no usable '{fuelName}' found."
-                );
-            }
-            else
-            {
-                LogDebug(
-                    $"Container result: " +
-                    $"consumed={consumed}x {fuelName}, " +
-                    $"containersUsed={containersUsed}"
+                    $"consumed={amountToTake}x {fuelName}"
                 );
             }
 
