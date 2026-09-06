@@ -11,8 +11,7 @@ A lightweight BepInEx mod for Valheim that automatically refills nearby fireplac
 
 ## Features
 
-- Automatically refills campfires, hearths, torches, braziers, bonfires and other compatible fireplaces
-- Automatically uses the correct fuel type
+- Automatically refills campfires, hearths, torches, braziers, bonfires, hot tubs and other compatible fireplaces
 - Can use fuel from the player inventory and nearby containers
 - Configurable refill radius and threshold
 - Refill to maximum or by a fixed amount
