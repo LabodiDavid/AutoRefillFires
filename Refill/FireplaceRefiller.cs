@@ -135,6 +135,11 @@ namespace AutoRefillFires
             bool result;
             string matchedRule;
 
+            if (objectName.Contains("candle"))
+            {
+                result = false;
+                matchedRule = "IgnoredCandle";
+            }
             if (objectName.Contains("fire_pit") || objectName.Contains("firepit"))
             {
                 result = _config.FillCampfires.Value;
