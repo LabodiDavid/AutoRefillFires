@@ -2,6 +2,12 @@
 
 All notable changes to Auto Refill Fires will be documented in this file.
 
+## [1.2.1] - 2026-09-09
+
+### Added
+
+- Support for Valheim 1.0 Deep North update
+
 ## [1.2.0] - 2026-09-06
 
 ### Added
@@ -9,6 +15,7 @@ All notable changes to Auto Refill Fires will be documented in this file.
 - Added automatic Hot Tub refilling support.
 - Added a separate `FillHotTubs` configuration option.
 - Hot Tubs use the same fuel source, reserve, priority and refill settings as other supported objects.
+- Prioritizing fire with the lowest fuel to refill
 
 ### Changed
 

@@ -3,11 +3,9 @@
 
 A lightweight BepInEx mod for Valheim that automatically refills nearby fireplaces and torches.
 
-## What's New in 1.2.0
+## What's New in 1.2.1
 ##### [Full CHANGELOG](https://github.com/LabodiDavid/AutoRefillFires/blob/main/Thunderstore/CHANGELOG.md)
-- Added automatic Hot Tub refilling with a separate `FillHotTubs` toggle
-- Fixed Resin candles being incorrectly treated as refillable objects
-- Major internal refactor and code cleanup
+- Support for Valheim 1.0 Deep North update
 
 ## Features
 
