@@ -2,6 +2,21 @@
 
 All notable changes to Auto Refill Fires will be documented in this file.
 
+## [1.2.2] - 2026-09-13
+
+### Added
+
+- Added optional automatic repair for all supported refillable object types.
+- Added `AutoRepair` master configuration option.
+- Repair follows the existing `FillCampfires`, `FillHearths`, `FillStandingTorches`, `FillWallTorches`, `FillBraziers`, `FillBonfires`, `FillHotTubs` and `FillOtherFireplaces` toggles.
+- Added `RepairBelowPercent` configuration option to control the health threshold that triggers repair.
+- Added `OnlyRepairOwnPieces` configuration option.
+- Repair reuses the existing fireplace and Hot Tub scans and does not add another scene-wide object search.
+
+### Fixed
+
+- Fixed Resin candles being able to fall through to `FillOtherFireplaces` despite the candle ignore rule.
+
 ## [1.2.1] - 2026-09-09
 
 ### Added

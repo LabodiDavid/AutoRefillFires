@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AutoRefillFires
@@ -8,6 +8,7 @@ namespace AutoRefillFires
         private readonly ModConfig _config;
         private readonly FireplaceRefiller _fireplaceRefiller;
         private readonly HotTubRefiller _hotTubRefiller;
+        private readonly RepairManager _repairManager;
         private readonly ModLogger _log;
 
         public RefillManager(ModConfig config, ModLogger log)
@@ -17,7 +18,8 @@ namespace AutoRefillFires
 
             FuelManager fuelManager = new FuelManager(_config, _log);
             _fireplaceRefiller = new FireplaceRefiller(_config, fuelManager, _log);
-            _hotTubRefiller = new HotTubRefiller(_config, fuelManager, _log);
+            _repairManager = new RepairManager(_config, _log);
+            _hotTubRefiller = new HotTubRefiller(_config, fuelManager, _repairManager, _log);
         }
 
         public void Run(Player player)
@@ -99,6 +101,9 @@ namespace AutoRefillFires
                     $"fuel={candidate.FuelPercent * 100f:0.0}%, " +
                     $"distance={candidate.Distance:0.0}m"
                 );
+
+                if (FireplaceTypeFilter.IsEnabled(_config, candidate.Fireplace, out string matchedRule))
+                    _repairManager.TryRepair(player, candidate.Fireplace, matchedRule);
 
                 _fireplaceRefiller.TryRefill(player, candidate.Fireplace, containers);
             }

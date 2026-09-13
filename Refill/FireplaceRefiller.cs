@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace AutoRefillFires
 {
@@ -130,55 +130,11 @@ namespace AutoRefillFires
 
         private bool ShouldRefillFireplace(Fireplace fireplace)
         {
-            string objectName = fireplace.gameObject.name.Replace("(Clone)", "").ToLowerInvariant();
-
-            bool result;
-            string matchedRule;
-
-            if (objectName.Contains("candle"))
-            {
-                result = false;
-                matchedRule = "IgnoredCandle";
-            }
-            if (objectName.Contains("fire_pit") || objectName.Contains("firepit"))
-            {
-                result = _config.FillCampfires.Value;
-                matchedRule = "FillCampfires";
-            }
-            else if (objectName.Contains("hearth"))
-            {
-                result = _config.FillHearths.Value;
-                matchedRule = "FillHearths";
-            }
-            else if (objectName.Contains("groundtorch"))
-            {
-                result = _config.FillStandingTorches.Value;
-                matchedRule = "FillStandingTorches";
-            }
-            else if (objectName.Contains("walltorch"))
-            {
-                result = _config.FillWallTorches.Value;
-                matchedRule = "FillWallTorches";
-            }
-            else if (objectName.Contains("brazier"))
-            {
-                result = _config.FillBraziers.Value;
-                matchedRule = "FillBraziers";
-            }
-            else if (objectName.Contains("bonfire"))
-            {
-                result = _config.FillBonfires.Value;
-                matchedRule = "FillBonfires";
-            }
-            else
-            {
-                result = _config.FillOtherFireplaces.Value;
-                matchedRule = "FillOtherFireplaces";
-            }
+            bool result = FireplaceTypeFilter.IsEnabled(_config, fireplace, out string matchedRule);
 
             _log.Debug(
                 $"ShouldRefillFireplace: name='{fireplace.gameObject.name}', " +
-                $"normalized='{objectName}', matchedRule={matchedRule}, result={result}"
+                $"matchedRule={matchedRule}, result={result}"
             );
 
             return result;

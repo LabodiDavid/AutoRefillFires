@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace AutoRefillFires
 {
@@ -6,12 +6,14 @@ namespace AutoRefillFires
     {
         private readonly ModConfig _config;
         private readonly FuelManager _fuelManager;
+        private readonly RepairManager _repairManager;
         private readonly ModLogger _log;
 
-        public HotTubRefiller(ModConfig config, FuelManager fuelManager, ModLogger log)
+        public HotTubRefiller(ModConfig config, FuelManager fuelManager, RepairManager repairManager, ModLogger log)
         {
             _config = config;
             _fuelManager = fuelManager;
+            _repairManager = repairManager;
             _log = log;
         }
 
@@ -41,6 +43,7 @@ namespace AutoRefillFires
                     $"distance={distance:0.0}m"
                 );
 
+                _repairManager.TryRepair(player, smelter, "hot tub");
                 TryRefillHotTub(player, smelter, containers);
             }
 

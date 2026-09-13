@@ -2,7 +2,7 @@
   "name": "AutoRefillFires",
   "version_number": "__VERSION__",
   "website_url": "https://github.com/LabodiDavid/AutoRefillFires",
-  "description": "Automatically refills nearby campfires, hearths and torches using fuel from the player inventory or optionally nearby containers.",
+  "description": "Automatically refills nearby fires from player or container fuel, with optional automatic repair for supported refillable objects.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2350"
   ]
